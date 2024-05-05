@@ -2,7 +2,7 @@
 /**
  * DDNS for Route53 in PHP
  *
- * @copyright 2023 by Robert Chapin
+ * @copyright 2023-2024 by Robert Chapin
  * @license GPL
  *
  * This program is free software: you can redistribute it and/or modify
@@ -31,7 +31,6 @@ use Aws\Route53\Route53Client;
 
 $curl = curl_init( IP_ADDR_FINDER );
 curl_setopt_array( $curl, [
-    CURLOPT_BINARYTRANSFER => TRUE,
     CURLOPT_RETURNTRANSFER => TRUE,
     CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
     CURLOPT_TIMEOUT => 5,
