@@ -2,7 +2,7 @@
 /**
  * DDNS for Route53 in PHP
  *
- * @copyright 2023-2024 by Robert Chapin
+ * @copyright 2023-2026 by Robert Chapin
  * @license GPL
  *
  * This program is free software: you can redistribute it and/or modify
@@ -25,51 +25,52 @@ require './config.php';
 
 use Aws\Credentials\CredentialProvider;
 use Aws\Route53\Route53Client;
+use RuntimeException;
 
 
 /* Current Address Retrieval */
 
-$curl = curl_init( IP_ADDR_FINDER );
-curl_setopt_array( $curl, [
-    CURLOPT_RETURNTRANSFER => TRUE,
+$curl = curl_init(IP_ADDR_FINDER);
+curl_setopt_array($curl, [
+    CURLOPT_RETURNTRANSFER => true,
     CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
     CURLOPT_TIMEOUT => 5,
-] );
+]);
 
 $count = 1;
 $limit = 2;
-$raw_result = curl_exec( $curl );
-while ( false === $raw_result && $count <= $limit ) {
+$raw_result = curl_exec($curl);
+while (false === $raw_result && $count <= $limit) {
     // Transient errors might occur.
-    if ( $count >= $limit ) {
+    if ($count >= $limit) {
         // This should be rare.
-        $errorno = curl_errno( $curl );
-        $errormsg = curl_error( $curl );
-        trigger_error( "Unable to contact IP address finder after $limit attempts.  cURL error $errorno: $errormsg", E_USER_ERROR );
+        $errorno = curl_errno($curl);
+        $errormsg = curl_error($curl);
+        throw new RuntimeException("Unable to contact IP address finder after $limit attempts.  cURL error $errorno: $errormsg");
     }
 
-    sleep( 2 );
+    sleep(2);
     $count++;
-    $raw_result = curl_exec( $curl );
+    $raw_result = curl_exec($curl);
 }
 
 // Grab the first dotted decimal notation on the page.
 $ipv4_regex = '/(?:[0-9]{1,3}\.){3}[0-9]{1,3}/';
-if ( preg_match( $ipv4_regex, $raw_result, $matches ) !== 1 ) {
-    trigger_error( 'IP address finder returned an unexpected result.', E_USER_ERROR );
+if (preg_match($ipv4_regex, $raw_result, $matches) !== 1) {
+    throw new RuntimeException('IP address finder returned an unexpected result.');
 };
 
 $newip = $matches[0];
 
 // Check against last known address
 $lastknown = false;
-if ( is_readable( LOCAL_FILE ) ) {
-    $lastknown = file_get_contents( LOCAL_FILE );
+if (is_readable(LOCAL_FILE)) {
+    $lastknown = file_get_contents(LOCAL_FILE);
 }
 
-if ( $lastknown !== false ) {
-    $oldip = trim( $lastknown );
-    if ( $newip === $oldip ) {
+if ($lastknown !== false) {
+    $oldip = trim($lastknown);
+    if ($newip === $oldip) {
         // No update needed.
         return;
     }
@@ -115,4 +116,4 @@ $result = $client->changeResourceRecordSets([
 
 /* Remeber Current Address */
 
-file_put_contents( LOCAL_FILE, $newip );
+file_put_contents(LOCAL_FILE, $newip);
