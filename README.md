@@ -1,9 +1,14 @@
-# DDNS for Route53 in PHP
+# DDNS for Route 53 in PHP
 This script can query a website to reveal the client's external IPv4 address,
-check if any change has occurred, then if needed, use the Route53 API to update a DNS record.
+check if any change has occurred, then update a DNS record in Route 53.
+
+There is an extra option to enable checking the IPv6 address of a
+named interface, which is useful in stateless addressing environments.
+When adding this configuration, the IAM user permission policy for Route 53
+must allow updates to both DNS record types.
 
 Code is minimal and could be expanded easily.  I wrote this because there were
-no good examples in PHP and I just wanted a workable solution.
+no good examples in PHP.
 
 ## Requirements
 - PHP

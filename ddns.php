@@ -1,6 +1,6 @@
 <?php
 /**
- * DDNS for Route53 in PHP
+ * DDNS for Route 53 in PHP
  *
  * @copyright 2023-2026 by Robert Chapin
  * @license GPL
@@ -25,7 +25,7 @@ require './config.php';
 
 use Aws\Credentials\CredentialProvider;
 use Aws\Route53\Route53Client;
-use RuntimeException;
+//use RuntimeException;
 
 
 /* Current Address Retrieval */
@@ -60,7 +60,8 @@ if (preg_match($ipv4_regex, $raw_result, $matches) !== 1) {
     throw new RuntimeException('IP address finder returned an unexpected result.');
 };
 
-$newip = $matches[0];
+$newip4 = $matches[0];
+$changed4 = true;
 
 // Check against last known address
 $lastknown = false;
@@ -70,9 +71,46 @@ if (is_readable(LOCAL_FILE)) {
 
 if ($lastknown !== false) {
     $oldip = trim($lastknown);
-    if ($newip === $oldip) {
-        // No update needed.
-        return;
+    if ($newip4 === $oldip) {
+        $changed4 = false;
+    }
+}
+
+// Grab the interface list to find this machine's public IPv6 address.
+$changed6 = false;
+if (defined('ENABLE_IP_V6') && ENABLE_IP_V6) {
+    $ifs = net_get_interfaces();
+    if (! isset($ifs[INTERFACE_NAME]['unicast'])) {
+        throw new RuntimeException('Unable to find your interface named "' . INTERFACE_NAME . '"');
+    };
+    foreach ($ifs[INTERFACE_NAME]['unicast'] as $subnet) {
+        // Skip any IPv4, link-local, or loopback results.
+        if (! isset($subnet['family']) || ! isset($subnet['address'])) continue;
+        if ($subnet['family'] !== AF_INET6) continue;
+        $prefix = substr($subnet['address'], 0, 4);
+        if ($prefix === '') continue;
+        if ($prefix === '::1') continue;
+        if ($prefix === 'fe80') continue;
+
+        $newip6 = $subnet['address'];
+        $changed6 = true;
+        break;
+    }
+    if (! $changed6) {
+        throw new RuntimeException('Unable to find your IPv6 address.');
+    };
+
+    // Check against last known address
+    $lastknown = false;
+    if (is_readable(LOCAL_FILE_V6)) {
+        $lastknown = file_get_contents(LOCAL_FILE_V6);
+    }
+
+    if ($lastknown !== false) {
+        $oldip = trim($lastknown);
+        if ($newip6 === $oldip) {
+            $changed6 = false;
+        }
     }
 }
 
@@ -89,25 +127,48 @@ $client = new Route53Client([
     'credentials' => $provider,
 ]);
 
+// Generate changes
+$changes = [];
+if ($changed4) {
+    $changes[] = [
+        'Action' => 'UPSERT', // REQUIRED
+        'ResourceRecordSet' => [ // REQUIRED
+            'Name' => RECORD_NAME, // REQUIRED
+            'ResourceRecords' => [
+                [
+                    'Value' => $newip4, // REQUIRED
+                ],
+                // ...
+            ],
+            'TTL' => '600', // Required unless using AliasTarget or TrafficPolicyInstanceId.
+            'Type' => 'A', // REQUIRED
+        ],
+    ];
+}
+if ($changed6) {
+    $changes[] = [
+        'Action' => 'UPSERT', // REQUIRED
+        'ResourceRecordSet' => [ // REQUIRED
+            'Name' => RECORD_NAME, // REQUIRED
+            'ResourceRecords' => [
+                [
+                    'Value' => $newip6, // REQUIRED
+                ],
+                // ...
+            ],
+            'TTL' => '600', // Required unless using AliasTarget or TrafficPolicyInstanceId.
+            'Type' => 'AAAA', // REQUIRED
+        ],
+    ];
+}
+if (empty($changes)) {
+    return;
+}
+
+// Batch and send the changes.
 $result = $client->changeResourceRecordSets([
     'ChangeBatch' => [ // REQUIRED
-        'Changes' => [ // REQUIRED
-            [
-                'Action' => 'UPSERT', // REQUIRED
-                'ResourceRecordSet' => [ // REQUIRED
-                    'Name' => RECORD_NAME, // REQUIRED
-                    'ResourceRecords' => [
-                        [
-                            'Value' => $newip, // REQUIRED
-                        ],
-                        // ...
-                    ],
-                    'TTL' => '600', // Required unless using AliasTarget or TrafficPolicyInstanceId.
-                    'Type' => 'A', // REQUIRED
-                ],
-            ],
-            // ...
-        ],
+        'Changes' => $changes, // REQUIRED
         'Comment' => 'DDNS Push',
     ],
     'HostedZoneId' => HOSTED_ZONE_ID, // REQUIRED
@@ -116,4 +177,9 @@ $result = $client->changeResourceRecordSets([
 
 /* Remeber Current Address */
 
-file_put_contents(LOCAL_FILE, $newip);
+if ($changed4) {
+    file_put_contents(LOCAL_FILE, $newip4);
+}
+if ($changed6) {
+    file_put_contents(LOCAL_FILE_V6, $newip6);    
+}
